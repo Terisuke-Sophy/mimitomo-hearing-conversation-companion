@@ -37,60 +37,28 @@ CREATE TABLE memories (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Create chat_messages table
+CREATE TABLE chat_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  text TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Enable RLS on all tables
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profile_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE memories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 
--- Users table policies
-CREATE POLICY "Users can view own data" ON users
-  FOR SELECT USING (auth.uid()::text = id::text);
-
-CREATE POLICY "Users can update own data" ON users
-  FOR UPDATE USING (auth.uid()::text = id::text);
-
-CREATE POLICY "Users can insert own data" ON users
-  FOR INSERT WITH CHECK (auth.uid()::text = id::text);
-
--- Profile items table policies
-CREATE POLICY "Users can view own profile items" ON profile_items
-  FOR SELECT USING (auth.uid()::text = user_id::text);
-
-CREATE POLICY "Users can update own profile items" ON profile_items
-  FOR UPDATE USING (auth.uid()::text = user_id::text);
-
-CREATE POLICY "Users can insert own profile items" ON profile_items
-  FOR INSERT WITH CHECK (auth.uid()::text = user_id::text);
-
-CREATE POLICY "Users can delete own profile items" ON profile_items
-  FOR DELETE USING (auth.uid()::text = user_id::text);
-
--- Reminders table policies
-CREATE POLICY "Users can view own reminders" ON reminders
-  FOR SELECT USING (auth.uid()::text = user_id::text);
-
-CREATE POLICY "Users can update own reminders" ON reminders
-  FOR UPDATE USING (auth.uid()::text = user_id::text);
-
-CREATE POLICY "Users can insert own reminders" ON reminders
-  FOR INSERT WITH CHECK (auth.uid()::text = user_id::text);
-
-CREATE POLICY "Users can delete own reminders" ON reminders
-  FOR DELETE USING (auth.uid()::text = user_id::text);
-
--- Memories table policies
-CREATE POLICY "Users can view own memories" ON memories
-  FOR SELECT USING (auth.uid()::text = user_id::text);
-
-CREATE POLICY "Users can update own memories" ON memories
-  FOR UPDATE USING (auth.uid()::text = user_id::text);
-
-CREATE POLICY "Users can insert own memories" ON memories
-  FOR INSERT WITH CHECK (auth.uid()::text = user_id::text);
-
-CREATE POLICY "Users can delete own memories" ON memories
-  FOR DELETE USING (auth.uid()::text = user_id::text);
+-- 開発用：すべてのアクセスを許可（本番環境では削除してください）
+CREATE POLICY "Enable all access for development" ON users FOR ALL USING (true);
+CREATE POLICY "Enable all access for development" ON profile_items FOR ALL USING (true);
+CREATE POLICY "Enable all access for development" ON reminders FOR ALL USING (true);
+CREATE POLICY "Enable all access for development" ON memories FOR ALL USING (true);
+CREATE POLICY "Enable all access for development" ON chat_messages FOR ALL USING (true);
 
 -- Create storage bucket for memories images
 INSERT INTO storage.buckets (id, name, public) 

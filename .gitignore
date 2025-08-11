@@ -77,3 +77,6 @@ Thumbs.db
 # Supabase
 supabase/.temp/
 supabase/.env
+
+#Cursor
+.cursor/

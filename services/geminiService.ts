@@ -1,12 +1,19 @@
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 
-const API_KEY = process.env.API_KEY;
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+
+// デバッグ用ログ
+console.log("Environment variables check:");
+console.log("VITE_GEMINI_API_KEY:", import.meta.env.VITE_GEMINI_API_KEY);
+console.log("API_KEY value:", API_KEY);
+console.log("import.meta.env keys:", Object.keys(import.meta.env));
 
 if (!API_KEY) {
   console.warn("Gemini API Key is not set. AI features will be disabled or use mock data.");
 }
 
-const ai = new GoogleGenAI({ apiKey: API_KEY! });
+// API_KEYが存在する場合のみGoogleGenAIを初期化
+const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
 const model = "gemini-2.5-flash";
 
 // Updated to accept a pre-formatted string for user context
@@ -15,7 +22,7 @@ export const generateAiResponse = async (
   history: { role: 'user' | 'model', parts: { text: string }[] }[],
   userContextString: string // The formatted string from the User object
 ): Promise<string> => {
-  if (!API_KEY) {
+  if (!API_KEY || !ai) {
     return new Promise(resolve => setTimeout(() => resolve("こんにちは！今日はどんなお話をしましょうか？Gemini APIキーが設定されていないため、これはデモ用の返信です。"), 1000));
   }
   
@@ -51,7 +58,7 @@ ${userContextString}
 };
 
 export const extractReminderFromText = async (text: string): Promise<{ title: string; time: string }> => {
-  if (!API_KEY) {
+  if (!API_KEY || !ai) {
     console.warn("Gemini API Key is not set. Reminder extraction will use mock data.");
     const timeMatch = text.match(/(\d{1,2}:\d{2}|\d{1,2}時\d{1,2}分|\d{1,2}時)/);
     const mockTime = timeMatch ? (timeMatch[0].replace('時', ':').replace('分', '').padStart(5, '0')) : '時刻未設定';

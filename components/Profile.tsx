@@ -1,23 +1,19 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { User, ProfileInfoItem, ProfileInfoCategory } from '../types';
 import { EditIcon, TrashIcon, PlusIcon, CloseIcon, UserIcon } from './icons';
+import { userService, profileItemService } from '../services/supabaseClient';
 
-// Mock user data for the profile page
-const initialUser: User = {
-  id: '12345',
+// デフォルトユーザーID（実際のアプリでは認証から取得）
+const DEFAULT_USER_ID = '5bd4b36e-6867-41d1-8f95-1a334dd9064e';
+
+// デフォルトユーザーデータ
+const defaultUser: User = {
+  id: DEFAULT_USER_ID,
   display_name: '田中 克己',
   gender: '男性',
   dob: '1945-03-10',
-  profile_items: [
-    { id: 'p1', category: ProfileInfoCategory.FAMILY, name: 'さくら', details: '一人娘。近くに住んでいる。' },
-    { id: 'p2', category: ProfileInfoCategory.FAMILY, name: 'ゆうと', details: '小学3年生の孫でサッカーが好きな男の子。' },
-    { id: 'p3', category: ProfileInfoCategory.FAMILY, name: 'みお', details: '5歳の孫で絵を描くのが得意な女の子。' },
-    { id: 'p4', category: ProfileInfoCategory.FAMILY, name: 'よしえ', details: '2年前に死別した妻。' },
-    { id: 'p5', category: ProfileInfoCategory.HOBBY, name: '釣り', details: '若い頃は漁師をしていたので、今でも時々、港へ釣りに行くのが楽しみ。' },
-    { id: 'p6', category: ProfileInfoCategory.MEMORY, name: '桜の木', details: '亡き妻よしえと一緒に庭で育てていた桜の木が宝物。' },
-    { id: 'p7', category: ProfileInfoCategory.OTHER, name: 'なめろう', details: '妻よしえがよく作ってくれたアジのなめろうが好物。' },
-  ],
+  profile_items: [],
 };
 
 // --- Sub-components for Modals ---
@@ -159,28 +155,89 @@ const ProfileEditModal: React.FC<{
 // --- Main Profile Component ---
 
 const Profile: React.FC = () => {
-  const [user, setUser] = useState<User>(initialUser);
+  const [user, setUser] = useState<User>(defaultUser);
   const [isEditingBasic, setIsEditingBasic] = useState(false);
   const [editingItem, setEditingItem] = useState<ProfileInfoItem | undefined | null>(undefined); // null for new, undefined for closed
 
-  const handleSaveBasicInfo = (updatedData: Partial<User>) => {
+  const fetchUser = async () => {
+    const fetchedUser = await userService.getUser(DEFAULT_USER_ID);
+    if (fetchedUser) {
+      setUser(prev => ({ 
+        ...prev, 
+        id: fetchedUser.id,
+        display_name: fetchedUser.display_name,
+        gender: fetchedUser.gender,
+        dob: fetchedUser.dob
+      }));
+    }
+  };
+
+  const fetchProfileItems = async () => {
+    const items = await profileItemService.getProfileItems(DEFAULT_USER_ID);
+    const convertedItems: ProfileInfoItem[] = items.map(item => ({
+      id: item.id,
+      category: item.category as ProfileInfoCategory,
+      name: item.name,
+      details: item.details
+    }));
+    setUser(prev => ({ ...prev, profile_items: convertedItems }));
+  };
+
+  useEffect(() => {
+    fetchUser();
+    fetchProfileItems();
+  }, []);
+
+  const handleSaveBasicInfo = async (updatedData: Partial<User>) => {
+    await userService.updateUser(user.id, updatedData);
     setUser(prev => ({ ...prev, ...updatedData }));
   };
 
-  const handleSaveProfileItem = (item: ProfileInfoItem) => {
-    setUser(prev => {
-        const itemExists = prev.profile_items.some(pi => pi.id === item.id);
-        if (itemExists) {
-            return { ...prev, profile_items: prev.profile_items.map(pi => pi.id === item.id ? item : pi) };
-        } else {
-            return { ...prev, profile_items: [...prev.profile_items, item] };
-        }
-    });
+  const handleSaveProfileItem = async (item: ProfileInfoItem) => {
+    if (item.id) {
+      // 既存アイテムの更新
+      await profileItemService.updateProfileItem(item.id, item);
+      // ローカル状態を直接更新（順序を保持）
+      setUser(prev => ({
+        ...prev,
+        profile_items: prev.profile_items.map(existingItem => 
+          existingItem.id === item.id ? item : existingItem
+        )
+      }));
+    } else {
+      // 新規アイテムの追加
+      const savedItem = await profileItemService.saveProfileItem({
+        user_id: user.id,
+        category: item.category,
+        name: item.name,
+        details: item.details
+      });
+      if (savedItem) {
+        const newItem: ProfileInfoItem = {
+          id: savedItem.id,
+          category: savedItem.category as ProfileInfoCategory,
+          name: savedItem.name,
+          details: savedItem.details
+        };
+        // 新規アイテムを最後に追加
+        setUser(prev => ({
+          ...prev,
+          profile_items: [...prev.profile_items, newItem]
+        }));
+      }
+    }
   };
 
-  const handleDeleteProfileItem = (id: string) => {
+  const handleDeleteProfileItem = async (id: string) => {
     if(window.confirm("この情報を削除してもよろしいですか？")) {
-        setUser(prev => ({ ...prev, profile_items: prev.profile_items.filter(pi => pi.id !== id) }));
+        const success = await profileItemService.deleteProfileItem(id);
+        if (success) {
+          // ローカル状態から削除（順序を保持）
+          setUser(prev => ({
+            ...prev,
+            profile_items: prev.profile_items.filter(item => item.id !== id)
+          }));
+        }
     }
   };
 

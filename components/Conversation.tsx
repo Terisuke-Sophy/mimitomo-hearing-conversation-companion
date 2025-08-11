@@ -101,6 +101,45 @@ const Conversation: React.FC = () => {
   const speechTimeoutRef = useRef<number | null>(null);
   const finalTranscriptRef = useRef<string>('');
 
+  // 音声読み上げ機能
+  const speak = useCallback((text: string) => {
+    if (!isSpeakerOn) {
+      console.log('Speaker is off, skipping speech synthesis');
+      return;
+    }
+    
+    console.log('Starting speech synthesis for:', text);
+    
+    // 既存の音声を停止
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ja-JP';
+    utterance.rate = 0.8; // 少しゆっくりめ
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+    
+    // 日本語の音声を優先
+    const voices = window.speechSynthesis.getVoices();
+    console.log('Available voices:', voices.map(v => `${v.name} (${v.lang})`));
+    
+    const japaneseVoice = voices.find(voice => 
+      voice.lang.includes('ja') || voice.lang.includes('JP')
+    );
+    if (japaneseVoice) {
+      utterance.voice = japaneseVoice;
+      console.log('Using Japanese voice:', japaneseVoice.name);
+    } else {
+      console.log('No Japanese voice found, using default');
+    }
+    
+    utterance.onstart = () => console.log('Speech synthesis started');
+    utterance.onend = () => console.log('Speech synthesis ended');
+    utterance.onerror = (event) => console.error('Speech synthesis error:', event);
+    
+    window.speechSynthesis.speak(utterance);
+  }, [isSpeakerOn]);
+
   // 初期化時にチャットメッセージを読み込む
   useEffect(() => {
     const loadMessages = async () => {
@@ -125,16 +164,6 @@ const Conversation: React.FC = () => {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  const speak = useCallback((text: string) => {
-    if (!isSpeakerOn) return;
-    window.speechSynthesis.cancel();
-    // Add a prepended space to give the synthesis engine a moment to warm up
-    const utterance = new SpeechSynthesisUtterance("　" + text);
-    utterance.lang = 'ja-JP';
-    utterance.rate = 0.9;
-    window.speechSynthesis.speak(utterance);
-  }, [isSpeakerOn]);
 
   const handleSend = useCallback(async (text: string) => {
     const messageText = text.trim();
@@ -249,13 +278,30 @@ const Conversation: React.FC = () => {
     };
     
     recognitionRef.current = recognition;
-    
-    return () => {
-        if(recognitionRef.current) recognitionRef.current.stop();
-        if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
-        window.speechSynthesis.cancel();
-    };
   }, [handleSend]);
+
+  // 音声合成の初期化
+  useEffect(() => {
+    // 音声リストの読み込みを待つ
+    const loadVoices = () => {
+      window.speechSynthesis.getVoices();
+    };
+    
+    // 音声リストが利用可能になったら初期化
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+    
+    // 初期読み込み
+    loadVoices();
+    
+    // クリーンアップ処理
+    return () => {
+      if (recognitionRef.current) recognitionRef.current.stop();
+      if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
+      window.speechSynthesis.cancel();
+    };
+  }, []);
   
   const handleToggleListening = () => {
     setMicError('');
