@@ -45,19 +45,87 @@ declare global {
   }
 }
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Reminder } from '../types';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { extractReminderFromText } from '../services/geminiService';
-import { PlusIcon, TrashIcon, CloseIcon, MicrophoneIcon, StopIcon, CheckIcon } from './icons';
+import { supabase } from '../services/supabaseClient';
+import { Reminder } from '../types';
+import { CheckIcon, CloseIcon, MicrophoneIcon, PlusIcon, StopIcon, TrashIcon } from './icons';
 
-// Mock data as Supabase is commented out
-const initialReminders: Reminder[] = [
-  { id: '1', user_id: '12345', title: '朝のお薬', time: '08:00', color: 'bg-red-300', is_completed: true },
-  { id: '2', user_id: '12345', title: '軽い散歩', time: '10:00', color: 'bg-green-300', is_completed: false },
-  { id: '3', user_id: '12345', title: '昼のお薬', time: '12:30', color: 'bg-red-300', is_completed: false },
-  { id: '4', user_id: '12345', title: 'お孫さんと電話', time: '15:00', color: 'bg-blue-300', is_completed: false },
-  { id: '5', user_id: '12345', title: '夜のお薬', time: '19:00', color: 'bg-red-300', is_completed: false },
-];
+// 現在のユーザーID（実際のアプリでは認証から取得）
+const CURRENT_USER_ID = '5bd4b36e-6867-41d1-8f95-1a334dd9064e';
+
+// リマインダー関連のサービス関数
+const reminderService = {
+  // リマインダーを取得
+  async getReminders(userId: string) {
+    const { data, error } = await supabase
+      .from('reminders')
+      .select('*')
+      .eq('user_id', userId)
+      .order('time', { ascending: true });
+    
+    if (error) {
+      console.error('Error fetching reminders:', error);
+      return [];
+    }
+    
+    return data || [];
+  },
+
+  // リマインダーを保存
+  async saveReminder(userId: string, reminder: Omit<Reminder, 'id' | 'user_id'>) {
+    const { data, error } = await supabase
+      .from('reminders')
+      .insert({
+        user_id: userId,
+        title: reminder.title,
+        time: reminder.time,
+        is_completed: reminder.is_completed,
+        color: reminder.color
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error saving reminder:', error);
+      return null;
+    }
+    
+    return data;
+  },
+
+  // リマインダーを更新
+  async updateReminder(id: string, updates: Partial<Reminder>) {
+    const { data, error } = await supabase
+      .from('reminders')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error updating reminder:', error);
+      return null;
+    }
+    
+    return data;
+  },
+
+  // リマインダーを削除
+  async deleteReminder(id: string) {
+    const { error } = await supabase
+      .from('reminders')
+      .delete()
+      .eq('id', id);
+    
+    if (error) {
+      console.error('Error deleting reminder:', error);
+      return false;
+    }
+    
+    return true;
+  }
+};
 
 const ReminderItem: React.FC<{ reminder: Reminder; onToggle: (id: string) => void; onDelete: (id: string) => void; }> = ({ reminder, onToggle, onDelete }) => (
   <div
@@ -104,7 +172,7 @@ const AddReminderModal: React.FC<{
       const { title, time } = await extractReminderFromText(transcript);
       const newReminder: Reminder = {
         id: Date.now().toString(),
-        user_id: '12345',
+        user_id: CURRENT_USER_ID,
         title,
         time,
         color: 'bg-yellow-300',
@@ -242,36 +310,94 @@ const AddReminderModal: React.FC<{
 
 
 const Reminders: React.FC = () => {
-  const [reminders, setReminders] = useState<Reminder[]>(initialReminders);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
-  const handleToggleReminder = (id: string) => {
-    setReminders(
-      reminders.map((r) =>
-        r.id === id ? { ...r, is_completed: !r.is_completed } : r
-      )
-    );
+  // 初期化時にリマインダーを読み込む
+  useEffect(() => {
+    const loadReminders = async () => {
+      try {
+        const savedReminders = await reminderService.getReminders(CURRENT_USER_ID);
+        setReminders(savedReminders);
+      } catch (error) {
+        console.error('Error loading reminders:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadReminders();
+  }, []);
+
+  const handleToggleReminder = async (id: string) => {
+    const reminder = reminders.find(r => r.id === id);
+    if (!reminder) return;
+
+    const updatedReminder = await reminderService.updateReminder(id, {
+      is_completed: !reminder.is_completed
+    });
+
+    if (updatedReminder) {
+      setReminders(prev =>
+        prev.map((r) =>
+          r.id === id ? { ...r, is_completed: !r.is_completed } : r
+        )
+      );
+    }
   };
 
-  const handleAddReminder = (newReminder: Reminder) => {
-    setReminders(prev => {
-        const newState = [...prev, newReminder];
+  const handleAddReminder = async (newReminder: Reminder) => {
+    const savedReminder = await reminderService.saveReminder(CURRENT_USER_ID, {
+      title: newReminder.title,
+      time: newReminder.time,
+      is_completed: newReminder.is_completed,
+      color: newReminder.color
+    });
+
+    if (savedReminder) {
+      setReminders(prev => {
+        const newState = [...prev, savedReminder];
         // Sort by time, putting '時刻未設定' at the end
         newState.sort((a, b) => {
-            if (a.time === '時刻未設定' && b.time !== '時刻未設定') return 1;
-            if (a.time !== '時刻未設定' && b.time === '時刻未設定') return -1;
-            if (a.time === '時刻未設定' && b.time === '時刻未設定') return 0;
-            return a.time.localeCompare(b.time);
+          if (a.time === '時刻未設定' && b.time !== '時刻未設定') return 1;
+          if (a.time !== '時刻未設定' && b.time === '時刻未設定') return -1;
+          if (a.time === '時刻未設定' && b.time === '時刻未設定') return 0;
+          return a.time.localeCompare(b.time);
         });
         return newState;
-    });
+      });
+    }
   };
   
-  const handleDeleteReminder = (id: string) => {
-      if (window.confirm("この予定を削除してもよろしいですか？")) {
-          setReminders(prev => prev.filter(r => r.id !== id));
+  const handleDeleteReminder = async (id: string) => {
+    if (window.confirm("この予定を削除してもよろしいですか？")) {
+      const success = await reminderService.deleteReminder(id);
+      if (success) {
+        setReminders(prev => prev.filter(r => r.id !== id));
       }
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="p-4 pb-24">
+        <div className="flex justify-between items-center mb-4">
+          <h1 className="text-2xl font-bold text-gray-700">今日の予定</h1>
+        </div>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center text-gray-500">
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+              <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+              <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></span>
+            </div>
+            <p className="text-xl">予定を読み込み中...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 pb-24">

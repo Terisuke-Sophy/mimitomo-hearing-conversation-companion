@@ -46,14 +46,15 @@ declare global {
   }
 }
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { User, ChatMessage, ProfileInfoCategory } from '../types';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { generateAiResponse } from '../services/geminiService';
-import { MicrophoneIcon, SendIcon, StopIcon, SpeakerOnIcon, SpeakerOffIcon } from './icons';
+import { chatService } from '../services/supabaseClient';
+import { ChatMessage, ProfileInfoCategory, User } from '../types';
+import { MicrophoneIcon, SendIcon, SpeakerOffIcon, SpeakerOnIcon, StopIcon } from './icons';
 
 // Mock user data as Supabase is commented out, updated to new structure
 const mockUser: User = {
-  id: '12345',
+  id: '5bd4b36e-6867-41d1-8f95-1a334dd9064e', // 実際のユーザーIDを使用
   display_name: '田中さん',
   gender: '男性',
   dob: '1945-03-10',
@@ -92,12 +93,34 @@ const Conversation: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
   const [micError, setMicError] = useState<string>('');
   const [isSpeakerOn, setIsSpeakerOn] = useState<boolean>(true);
-  const [currentUser] = useState<User>(mockUser); // In a real app, this would come from a user context/store
+  const [currentUser] = useState<User>(mockUser);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const speechTimeoutRef = useRef<number | null>(null);
   const finalTranscriptRef = useRef<string>('');
+
+  // 初期化時にチャットメッセージを読み込む
+  useEffect(() => {
+    const loadMessages = async () => {
+      try {
+        const savedMessages = await chatService.getMessages(currentUser.id);
+        const formattedMessages: ChatMessage[] = savedMessages.map(msg => ({
+          id: msg.id,
+          role: msg.role as 'user' | 'model',
+          text: msg.text
+        }));
+        setMessages(formattedMessages);
+      } catch (error) {
+        console.error('Error loading messages:', error);
+      } finally {
+        setIsInitialized(true);
+      }
+    };
+
+    loadMessages();
+  }, [currentUser.id]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -117,19 +140,25 @@ const Conversation: React.FC = () => {
     const messageText = text.trim();
     if (!messageText) return;
 
-    let newMessages: ChatMessage[] = [];
-    setMessages((prevMessages) => {
-        const newUserMessage: ChatMessage = { id: Date.now().toString(), role: 'user', text: messageText };
-        newMessages = [...prevMessages, newUserMessage];
-        return newMessages;
-    });
+    // ユーザーメッセージを保存
+    const savedUserMessage = await chatService.saveMessage(currentUser.id, 'user', messageText);
+    if (!savedUserMessage) {
+      console.error('Failed to save user message');
+      return;
+    }
 
-    const history = newMessages
-        .filter(m => m.id !== newMessages[newMessages.length - 1].id) 
-        .map(msg => ({
-            role: msg.role as 'user' | 'model',
-            parts: [{ text: msg.text }]
-        }));
+    const newUserMessage: ChatMessage = {
+      id: savedUserMessage.id,
+      role: 'user',
+      text: messageText
+    };
+
+    setMessages(prev => [...prev, newUserMessage]);
+
+    const history = messages.map(msg => ({
+      role: msg.role as 'user' | 'model',
+      parts: [{ text: msg.text }]
+    }));
     
     const userContextString = formatUserProfileForAI(currentUser);
 
@@ -138,17 +167,30 @@ const Conversation: React.FC = () => {
 
     try {
       const aiText = await generateAiResponse(messageText, history, userContextString);
-      const newAiMessage: ChatMessage = { id: (Date.now() + 1).toString(), role: 'model', text: aiText };
-      setMessages((prev) => [...prev, newAiMessage]);
-      speak(aiText);
+      
+      // AIメッセージを保存
+      const savedAiMessage = await chatService.saveMessage(currentUser.id, 'model', aiText);
+      if (savedAiMessage) {
+        const newAiMessage: ChatMessage = {
+          id: savedAiMessage.id,
+          role: 'model',
+          text: aiText
+        };
+        setMessages(prev => [...prev, newAiMessage]);
+        speak(aiText);
+      }
     } catch (error) {
       console.error(error);
-      const errorMessage: ChatMessage = { id: (Date.now() + 1).toString(), role: 'model', text: 'エラーが発生しました。' };
-      setMessages((prev) => [...prev, errorMessage]);
+      const errorMessage: ChatMessage = { 
+        id: Date.now().toString(), 
+        role: 'model', 
+        text: 'エラーが発生しました。' 
+      };
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
-  }, [speak, currentUser]);
+  }, [speak, currentUser, messages]);
 
   useEffect(() => {
     const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -245,6 +287,27 @@ const Conversation: React.FC = () => {
       e.preventDefault();
       handleSend(inputValue);
   };
+
+  // 初期化中はローディング表示
+  if (!isInitialized) {
+    return (
+      <div className="flex flex-col h-full p-4">
+        <div className="flex items-center justify-center mb-4 relative px-12">
+          <h1 className="text-2xl font-bold text-center text-gray-700">おはなし、質問モード</h1>
+        </div>
+        <div className="flex-grow flex items-center justify-center">
+          <div className="text-center text-gray-500">
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+              <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+              <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></span>
+            </div>
+            <p className="text-xl">メッセージを読み込み中...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full p-4">
