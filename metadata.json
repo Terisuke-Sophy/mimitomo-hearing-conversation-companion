@@ -1,0 +1,8 @@
+{
+  "name": "Mimitomo - Hearing & Conversation Companion",
+  "description": "An application designed to assist elderly users with hearing through real-time transcription, and provide a friendly AI conversation partner to combat loneliness and stimulate memories.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "prompt": ""
+}
