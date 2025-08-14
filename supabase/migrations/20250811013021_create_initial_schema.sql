@@ -64,15 +64,19 @@ CREATE POLICY "Enable all access for development" ON chat_messages FOR ALL USING
 INSERT INTO storage.buckets (id, name, public) 
 VALUES ('memories', 'memories', true);
 
--- Storage policies for memories bucket
-CREATE POLICY "Users can view own memories images" ON storage.objects
-  FOR SELECT USING (bucket_id = 'memories' AND auth.uid()::text = (storage.foldername(name))[1]);
+-- 開発用：認証なしでもアクセス可能（本番環境では削除してください）
+CREATE POLICY "Enable all access for development - storage" ON storage.objects
+  FOR ALL USING (bucket_id = 'memories');
 
-CREATE POLICY "Users can upload own memories images" ON storage.objects
-  FOR INSERT WITH CHECK (bucket_id = 'memories' AND auth.uid()::text = (storage.foldername(name))[1]);
+-- 本番用のポリシー（開発環境では無効化）
+-- CREATE POLICY "Users can view own memories images" ON storage.objects
+--   FOR SELECT USING (bucket_id = 'memories' AND auth.uid()::text = (storage.foldername(name))[1]);
 
-CREATE POLICY "Users can update own memories images" ON storage.objects
-  FOR UPDATE USING (bucket_id = 'memories' AND auth.uid()::text = (storage.foldername(name))[1]);
+-- CREATE POLICY "Users can upload own memories images" ON storage.objects
+--   FOR INSERT WITH CHECK (bucket_id = 'memories' AND auth.uid()::text = (storage.foldername(name))[1]);
 
-CREATE POLICY "Users can delete own memories images" ON storage.objects
-  FOR DELETE USING (bucket_id = 'memories' AND auth.uid()::text = (storage.foldername(name))[1]);
+-- CREATE POLICY "Users can update own memories images" ON storage.objects
+--   FOR UPDATE USING (bucket_id = 'memories' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+-- CREATE POLICY "Users can delete own memories images" ON storage.objects
+--   FOR DELETE USING (bucket_id = 'memories' AND auth.uid()::text = (storage.foldername(name))[1]);

@@ -50,7 +50,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { generateAiResponse } from '../services/geminiService';
 import { chatService } from '../services/supabaseClient';
 import { ChatMessage, ProfileInfoCategory, User } from '../types';
-import { MicrophoneIcon, SendIcon, SpeakerOffIcon, SpeakerOnIcon, StopIcon } from './icons';
+import { MicrophoneIcon, SendIcon, SpeakerOffIcon, SpeakerOnIcon, StopIcon, ClearIcon } from './icons';
 
 // Mock user data as Supabase is commented out, updated to new structure
 const mockUser: User = {
@@ -95,6 +95,7 @@ const Conversation: React.FC = () => {
   const [isSpeakerOn, setIsSpeakerOn] = useState<boolean>(true);
   const [currentUser] = useState<User>(mockUser);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false); // カスタム確認ダイアログの表示状態
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -278,7 +279,7 @@ const Conversation: React.FC = () => {
     };
     
     recognitionRef.current = recognition;
-  }, [handleSend]);
+  }, []);
 
   // 音声合成の初期化
   useEffect(() => {
@@ -303,6 +304,20 @@ const Conversation: React.FC = () => {
     };
   }, []);
   
+  // みみとも画面に入ったときに自動的にマイクをONにする（初期化時のみ）
+  useEffect(() => {
+    if (isInitialized && recognitionRef.current) {
+      // 少し遅延させてからマイクを開始
+      const timer = setTimeout(() => {
+        if (!isListening) {
+          handleToggleListening();
+        }
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isInitialized]); // isListeningを依存配列から削除
+  
   const handleToggleListening = () => {
     setMicError('');
     if (isListening) {
@@ -326,6 +341,27 @@ const Conversation: React.FC = () => {
     setIsSpeakerOn(newSpeakerState);
     if (!newSpeakerState) {
       window.speechSynthesis.cancel();
+    }
+  };
+
+  // チャット履歴をクリアする関数
+  const handleClearChat = async () => {
+    setShowClearConfirm(true); // カスタム確認ダイアログを表示
+  };
+
+  // チャット履歴を実際にクリアする関数
+  const confirmClearChat = async () => {
+    try {
+      // データベースからチャット履歴を削除
+      await chatService.deleteMessages(currentUser.id);
+      // ローカル状態もクリア
+      setMessages([]);
+      console.log('チャット履歴をクリアしました');
+    } catch (error) {
+      console.error('チャット履歴のクリアに失敗しました:', error);
+      alert('チャット履歴のクリアに失敗しました');
+    } finally {
+      setShowClearConfirm(false); // ダイアログを閉じる
     }
   };
 
@@ -359,18 +395,27 @@ const Conversation: React.FC = () => {
     <div className="flex flex-col h-full p-4">
       <div className="flex items-center justify-center mb-4 relative px-12">
         <h1 className="text-2xl font-bold text-center text-gray-700">おはなし、質問モード</h1>
-        <button
-          onClick={handleToggleSpeaker}
-          className={`absolute right-0 w-12 h-12 flex items-center justify-center rounded-full transition-colors duration-200 ${
-            isSpeakerOn ? 'bg-green-500 hover:bg-green-600' : 'bg-pink-400 hover:bg-pink-500'
-          }`}
-          aria-label={isSpeakerOn ? "スピーカーをオフにする" : "スピーカーをオンにする"}
-        >
-          {isSpeakerOn 
-            ? <SpeakerOnIcon className="w-7 h-7 text-white" /> 
-            : <SpeakerOffIcon className="w-7 h-7 text-white" />
-          }
-        </button>
+        <div className="absolute right-0 flex gap-2">
+          <button
+            onClick={handleClearChat}
+            className="w-12 h-12 flex items-center justify-center rounded-full bg-orange-500 hover:bg-orange-600 transition-colors duration-200"
+            aria-label="チャット履歴をクリア"
+          >
+            <ClearIcon className="w-7 h-7 text-white" />
+          </button>
+          <button
+            onClick={handleToggleSpeaker}
+            className={`w-12 h-12 flex items-center justify-center rounded-full transition-colors duration-200 ${
+              isSpeakerOn ? 'bg-green-500 hover:bg-green-600' : 'bg-pink-400 hover:bg-pink-500'
+            }`}
+            aria-label={isSpeakerOn ? "スピーカーをオフにする" : "スピーカーをオンにする"}
+          >
+            {isSpeakerOn 
+              ? <SpeakerOnIcon className="w-7 h-7 text-white" /> 
+              : <SpeakerOffIcon className="w-7 h-7 text-white" />
+            }
+          </button>
+        </div>
       </div>
 
       <div className="flex-grow overflow-y-auto space-y-6 p-4 bg-white rounded-lg shadow-inner">
@@ -378,7 +423,8 @@ const Conversation: React.FC = () => {
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-gray-500">
               <p className="text-2xl font-medium">
-                こんにちは！<br />マイクのボタンを押して、<br/>話してください
+                こんにちは！<br />
+                {isListening ? 'マイクで話してください' : 'マイクボタンを押すか、下の入力欄にメッセージを入力してください'}
               </p>
             </div>
           </div>
@@ -423,7 +469,7 @@ const Conversation: React.FC = () => {
           onChange={(e) => setInputValue(e.target.value)}
           placeholder={isListening ? 'お話しください…' : 'メッセージを入力…'}
           className="w-full bg-transparent border-none focus:ring-0 text-xl p-2"
-          disabled={isLoading || isListening}
+          disabled={isLoading}
         />
         <button
             type="button"
@@ -445,6 +491,33 @@ const Conversation: React.FC = () => {
           <SendIcon className="w-8 h-8"/>
         </button>
       </form>
+
+      {showClearConfirm && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+          <div className="bg-white p-8 rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="text-center">
+              <h3 className="text-3xl font-bold mb-8 text-gray-800">
+                おはなしの内容を<br />
+                新しくしますか？
+              </h3>
+              <div className="flex gap-4 justify-center">
+                <button
+                  onClick={() => setShowClearConfirm(false)}
+                  className="px-8 py-4 bg-gray-200 text-gray-800 rounded-full text-xl font-bold hover:bg-gray-300 transition-colors duration-200"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={confirmClearChat}
+                  className="px-8 py-4 bg-orange-500 text-white rounded-full text-xl font-bold hover:bg-orange-600 transition-colors duration-200"
+                >
+                  新しくする
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

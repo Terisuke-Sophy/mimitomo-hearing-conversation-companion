@@ -168,6 +168,20 @@ const HearingAid: React.FC = () => {
     };
   }, []); // <-- Empty dependency array is critical for this to work correctly.
 
+  // みみとも画面に入ったときに自動でマイクをONにする
+  useEffect(() => {
+    if (recognitionRef.current && !isListening) {
+      // 少し遅延させてからマイクを開始
+      const timer = setTimeout(() => {
+        if (!isListening) {
+          startListening();
+        }
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, []); // 初回のみ実行
+
   return (
     <div className="flex flex-col h-full p-4 bg-slate-800 text-white">
       <h1 className="flex items-center justify-center gap-2 text-2xl font-bold text-center text-white/90 mb-4">

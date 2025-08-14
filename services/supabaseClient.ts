@@ -171,6 +171,108 @@ export const profileItemService = {
   },
 };
 
+// 思い出関連のサービス関数
+export const memoryService = {
+  // 思い出を取得
+  async getMemories(userId: string) {
+    const { data, error } = await supabase
+      .from("memories")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching memories:", error);
+      return [];
+    }
+
+    return data || [];
+  },
+
+  // 思い出を保存
+  async saveMemory(memory: Database['public']['Tables']['memories']['Insert']) {
+    const { data, error } = await supabase
+      .from("memories")
+      .insert(memory)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error saving memory:", error);
+      return null;
+    }
+
+    return data;
+  },
+
+  // 思い出を更新
+  async updateMemory(id: string, updates: Partial<Database['public']['Tables']['memories']['Update']>) {
+    const { data, error } = await supabase
+      .from("memories")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error updating memory:", error);
+      return null;
+    }
+
+    return data;
+  },
+
+  // 思い出を削除
+  async deleteMemory(id: string) {
+    const { error } = await supabase
+      .from("memories")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error deleting memory:", error);
+      return false;
+    }
+
+    return true;
+  },
+
+  // 画像をアップロード
+  async uploadImage(file: File, userId: string) {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${userId}/${Date.now()}.${fileExt}`;
+
+      console.log('Uploading to path:', fileName);
+
+      const { data, error } = await supabase.storage
+        .from('memories')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (error) {
+        console.error("Storage upload error:", error);
+        throw new Error(`アップロードエラー: ${error.message}`);
+      }
+
+      console.log("Upload successful:", data);
+
+      // 公開URLを取得
+      const { data: urlData } = supabase.storage
+        .from('memories')
+        .getPublicUrl(fileName);
+
+      console.log("Public URL:", urlData.publicUrl);
+      return urlData.publicUrl;
+    } catch (error) {
+      console.error("Error in uploadImage:", error);
+      throw error;
+    }
+  },
+};
+
 // データベースの型定義
 export interface Database {
   public: {

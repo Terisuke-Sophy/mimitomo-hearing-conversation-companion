@@ -54,6 +54,65 @@ import { CheckIcon, CloseIcon, MicrophoneIcon, PlusIcon, StopIcon, TrashIcon } f
 // 現在のユーザーID（実際のアプリでは認証から取得）
 const CURRENT_USER_ID = '5bd4b36e-6867-41d1-8f95-1a334dd9064e';
 
+// 利用可能な色のリスト
+const AVAILABLE_COLORS = [
+  'bg-red-300',
+  'bg-green-300', 
+  'bg-blue-300',
+  'bg-yellow-300',
+  'bg-purple-300',
+  'bg-pink-300',
+  'bg-indigo-300',
+  'bg-orange-300',
+  'bg-teal-300',
+  'bg-cyan-300',
+  'bg-lime-300',
+  'bg-emerald-300'
+];
+
+// 色選択ロジック
+const selectColor = (existingReminders: Reminder[], newIndex?: number): string => {
+  // 現在使用されている色を取得
+  const usedColors = new Set(existingReminders.map(r => r.color));
+  
+  // まだ使われていない色を探す
+  const unusedColors = AVAILABLE_COLORS.filter(color => !usedColors.has(color));
+  
+  if (unusedColors.length > 0) {
+    // 未使用の色がある場合は、ランダムに選択（まんべんなく選ぶため）
+    const randomIndex = Math.floor(Math.random() * unusedColors.length);
+    return unusedColors[randomIndex];
+  }
+  
+  // 全ての色が使われている場合
+  if (newIndex !== undefined && newIndex >= 0 && newIndex <= existingReminders.length) {
+    // 上下の予定の色を確認
+    const adjacentColors = new Set<string>();
+    
+    // 上の予定の色（新しい予定が挿入される位置の前）
+    if (newIndex > 0) {
+      adjacentColors.add(existingReminders[newIndex - 1].color);
+    }
+    
+    // 下の予定の色（新しい予定が挿入される位置）
+    if (newIndex < existingReminders.length) {
+      adjacentColors.add(existingReminders[newIndex].color);
+    }
+    
+    // 隣接する予定と異なる色を選択
+    const differentColors = AVAILABLE_COLORS.filter(color => !adjacentColors.has(color));
+    
+    if (differentColors.length > 0) {
+      const randomIndex = Math.floor(Math.random() * differentColors.length);
+      return differentColors[randomIndex];
+    }
+  }
+  
+  // 最後の手段：ランダムに選択
+  const randomIndex = Math.floor(Math.random() * AVAILABLE_COLORS.length);
+  return AVAILABLE_COLORS[randomIndex];
+};
+
 // リマインダー関連のサービス関数
 const reminderService = {
   // リマインダーを取得
@@ -156,7 +215,8 @@ const AddReminderModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   onReminderAdd: (newReminder: Reminder) => void;
-}> = ({ isOpen, onClose, onReminderAdd }) => {
+  reminders: Reminder[]; // 既存の予定リストを追加
+}> = ({ isOpen, onClose, onReminderAdd, reminders }) => {
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState('マイクボタンを押して予定を話してください。');
@@ -167,7 +227,14 @@ const AddReminderModal: React.FC<{
   const handleAdd = useCallback(async (transcript: string) => {
     if (!transcript) return;
     setIsLoading(true);
-    setStatus('AIが予定を整理しています...');
+    setStatus('聞き取りました！');
+    
+    // マイクを確実に停止
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    setIsListening(false);
+    
     try {
       const { title, time } = await extractReminderFromText(transcript);
       const newReminder: Reminder = {
@@ -175,7 +242,7 @@ const AddReminderModal: React.FC<{
         user_id: CURRENT_USER_ID,
         title,
         time,
-        color: 'bg-yellow-300',
+        color: selectColor(reminders, reminders.length), // 既存の予定リストから色を選択
         is_completed: false,
       };
       onReminderAdd(newReminder);
@@ -186,13 +253,20 @@ const AddReminderModal: React.FC<{
     } finally {
       setIsLoading(false);
     }
-  }, [onClose, onReminderAdd]);
+  }, [onClose, onReminderAdd, reminders]);
 
   useEffect(() => {
     if (!isOpen) {
         setIsLoading(false);
         setIsListening(false);
         setStatus('マイクボタンを押して予定を話してください。');
+        // モーダルが閉じられたときにマイクを確実に停止
+        if (recognitionRef.current) {
+          recognitionRef.current.stop();
+        }
+        if (speechTimeoutRef.current) {
+          clearTimeout(speechTimeoutRef.current);
+        }
         return;
     };
     
@@ -231,6 +305,8 @@ const AddReminderModal: React.FC<{
       const finalText = finalTranscriptRef.current.trim();
       if(finalText) {
           handleAdd(finalText);
+          // 予定が追加された場合は、ここで処理が終了する
+          return;
       }
       finalTranscriptRef.current = '';
       setIsListening(false);
@@ -248,9 +324,25 @@ const AddReminderModal: React.FC<{
       finalTranscriptRef.current = '';
     };
 
+    // モーダルが開いたときに自動でマイクを開始
+    const timer = setTimeout(() => {
+      if (!isLoading && !isListening) {
+        try {
+          finalTranscriptRef.current = '';
+          recognition.start();
+          setIsListening(true);
+          setStatus('聞き取っています...');
+        } catch (e) {
+          console.error(e);
+          setStatus('マイクの開始に失敗しました。');
+        }
+      }
+    }, 500);
+
     return () => {
         if(recognitionRef.current) recognitionRef.current.stop();
         if(speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
+        clearTimeout(timer);
     };
   }, [isOpen, handleAdd, isLoading]);
 
@@ -409,14 +501,20 @@ const Reminders: React.FC = () => {
         </button>
       </div>
       <div className="space-y-4">
-        {reminders.map((reminder) => (
-          <ReminderItem key={reminder.id} reminder={reminder} onToggle={handleToggleReminder} onDelete={handleDeleteReminder}/>
+        {reminders.map((reminder, index) => (
+          <ReminderItem 
+            key={reminder.id} 
+            reminder={reminder} 
+            onToggle={handleToggleReminder} 
+            onDelete={handleDeleteReminder}
+          />
         ))}
       </div>
       <AddReminderModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onReminderAdd={handleAddReminder}
+        reminders={reminders}
       />
     </div>
   );

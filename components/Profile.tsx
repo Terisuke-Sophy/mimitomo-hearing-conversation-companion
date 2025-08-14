@@ -271,16 +271,16 @@ const Profile: React.FC = () => {
 
         {/* Basic Info Section */}
         <div className="bg-sky-100 p-4 rounded-xl shadow-lg">
-            <div className="flex justify-end items-center mb-3">
+            <div className="flex justify-between items-start">
+                <div className="space-y-2 text-xl">
+                    <p><span className="font-semibold w-24 inline-block">お名前:</span> {user.display_name}</p>
+                    <p><span className="font-semibold w-24 inline-block">性別:</span> {user.gender}</p>
+                    <p><span className="font-semibold w-24 inline-block">生年月日:</span> {user.dob}</p>
+                </div>
                 <button onClick={() => setIsEditingBasic(true)} className="flex items-center gap-2 px-3 py-1 bg-white border border-teal-500 text-teal-600 font-semibold rounded-full hover:bg-teal-50 transition-colors text-lg">
                     <EditIcon className="w-5 h-5" />
                     <span>編集</span>
                 </button>
-            </div>
-            <div className="space-y-2 text-xl">
-                <p><span className="font-semibold w-24 inline-block">お名前:</span> {user.display_name}</p>
-                <p><span className="font-semibold w-24 inline-block">性別:</span> {user.gender}</p>
-                <p><span className="font-semibold w-24 inline-block">生年月日:</span> {user.dob}</p>
             </div>
         </div>
       
