@@ -111,7 +111,7 @@ const ProfileEditModal: React.FC<{
       return;
     }
     const finalItem: ProfileInfoItem = {
-      id: item?.id || Date.now().toString(),
+      id: item?.id || '', // 新規アイテムの場合は空文字列（データベースで自動生成）
       ...formData,
     };
     onSave(finalItem);
@@ -194,7 +194,7 @@ const Profile: React.FC = () => {
   };
 
   const handleSaveProfileItem = async (item: ProfileInfoItem) => {
-    if (item.id) {
+    if (item.id && item.id !== '') {
       // 既存アイテムの更新
       await profileItemService.updateProfileItem(item.id, item);
       // ローカル状態を直接更新（順序を保持）
@@ -206,12 +206,22 @@ const Profile: React.FC = () => {
       }));
     } else {
       // 新規アイテムの追加
+      console.log('新規アイテムを追加中:', {
+        user_id: user.id,
+        category: item.category,
+        name: item.name,
+        details: item.details
+      });
+      
       const savedItem = await profileItemService.saveProfileItem({
         user_id: user.id,
         category: item.category,
         name: item.name,
         details: item.details
       });
+      
+      console.log('保存結果:', savedItem);
+      
       if (savedItem) {
         const newItem: ProfileInfoItem = {
           id: savedItem.id,
@@ -219,11 +229,18 @@ const Profile: React.FC = () => {
           name: savedItem.name,
           details: savedItem.details
         };
+        console.log('新規アイテムを作成:', newItem);
         // 新規アイテムを最後に追加
-        setUser(prev => ({
-          ...prev,
-          profile_items: [...prev.profile_items, newItem]
-        }));
+        setUser(prev => {
+          const updatedUser = {
+            ...prev,
+            profile_items: [...prev.profile_items, newItem]
+          };
+          console.log('更新後のユーザー状態:', updatedUser);
+          return updatedUser;
+        });
+      } else {
+        console.error('アイテムの保存に失敗しました');
       }
     }
   };
